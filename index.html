@@ -26,7 +26,7 @@
 
 <div id="app" class="max-w-md mx-auto p-4">
     <!-- Header -->
-    <header class="flex justify-between items-center py-4 border-b border-slate-800 mb-6">
+    <header class="flex justify-between items-center py-4 border-b border-slate-800 mb-4">
         <div>
             <h1 class="text-2xl font-bold tracking-tight text-white">Triathlon Log</h1>
             <p class="text-xs text-slate-400">Weekly Training Plan</p>
@@ -36,9 +36,34 @@
         </button>
     </header>
 
+    <!-- Navigation Tabs (Today vs All) -->
+    <nav class="flex bg-slate-800/80 p-1 rounded-xl mb-6 border border-slate-700/60">
+        <button @click="currentTab = 'today'"
+                :class="['flex-1 py-2 rounded-lg text-xs font-semibold transition-all', 
+                       currentTab === 'today' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white']">
+            Today ({{ todayWorkouts.length }})
+        </button>
+        <button @click="currentTab = 'all'"
+                :class="['flex-1 py-2 rounded-lg text-xs font-semibold transition-all', 
+                       currentTab === 'all' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white']">
+            All Workouts ({{ workouts.length }})
+        </button>
+    </nav>
+
+    <!-- Today's Progress Bar (Shows only in Today view) -->
+    <div v-if="currentTab === 'today' && todayWorkouts.length > 0" class="mb-5 bg-slate-800/60 border border-slate-700/50 p-3.5 rounded-2xl">
+        <div class="flex justify-between items-center text-xs font-semibold mb-2">
+            <span class="text-slate-300">Today's Progress</span>
+            <span class="text-blue-400">{{ todayProgress }}%</span>
+        </div>
+        <div class="w-full bg-slate-700/60 h-2 rounded-full overflow-hidden">
+            <div class="bg-emerald-500 h-full transition-all duration-300" :style="{ width: todayProgress + '%' }"></div>
+        </div>
+    </div>
+
     <!-- Workout List -->
     <main class="space-y-4">
-        <div v-for="workout in sortedWorkouts" :key="workout.id"
+        <div v-for="workout in displayedWorkouts" :key="workout.id"
              :class="['p-4 rounded-2xl border transition-all duration-200 cursor-pointer', 
                     workout.completed ? 'bg-slate-800/50 border-slate-800 opacity-60' : 'bg-slate-800 border-slate-700 shadow-md']"
              @click="viewWorkoutDetails(workout)">
@@ -68,7 +93,7 @@
                     <div class="flex items-center gap-3 text-xs text-slate-400 mt-1">
                         <span v-if="workout.duration">{{ workout.duration }} mins</span>
                         <span v-if="hasStructure(workout)" class="text-blue-400 flex items-center gap-1">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
                 Detailed Sets
               </span>
                     </div>
@@ -87,7 +112,14 @@
             </div>
         </div>
 
-        <div v-if="workouts.length === 0" class="text-center py-12 text-slate-500 text-sm">
+        <!-- Empty States -->
+        <div v-if="displayedWorkouts.length === 0 && currentTab === 'today'" class="text-center py-12 bg-slate-800/30 rounded-2xl border border-slate-800/80">
+            <p class="text-2xl mb-2">🎉</p>
+            <p class="text-slate-300 font-semibold text-base mb-1">No Workouts Today</p>
+            <p class="text-slate-500 text-xs">Enjoy your rest day or tap <strong>+ Workout</strong> to add one.</p>
+        </div>
+
+        <div v-if="displayedWorkouts.length === 0 && currentTab === 'all'" class="text-center py-12 text-slate-500 text-sm">
             No workouts scheduled. Tap <strong>+ Workout</strong> to add one!
         </div>
     </main>
@@ -244,13 +276,19 @@
     createApp({
         setup() {
             const workouts = ref([]);
+            const currentTab = ref('today'); // 'today' or 'all'
             const showAddModal = ref(false);
             const selectedWorkout = ref(null);
             const editingWorkout = ref(null);
             const movingWorkout = ref(null);
             const movingWorkoutDate = ref('');
 
-            const todayStr = new Date().toISOString().split('T')[0];
+            const getTodayStr = () => {
+                const d = new Date();
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            };
+
+            const todayStr = getTodayStr();
 
             const emptyForm = () => ({
                 type: 'Run',
@@ -306,9 +344,23 @@
                 localStorage.setItem('tri_workouts', JSON.stringify(newVal));
             }, { deep: true });
 
-            // Sorting by date (closest first)
-            const sortedWorkouts = computed(() => {
-                return [...workouts.value].sort((a, b) => new Date(a.date) - new Date(b.date));
+            // Today's Workouts Filter
+            const todayWorkouts = computed(() => {
+                const today = getTodayStr();
+                return workouts.value.filter(w => w.date === today);
+            });
+
+            // Today's Completion Progress (%)
+            const todayProgress = computed(() => {
+                if (todayWorkouts.value.length === 0) return 0;
+                const done = todayWorkouts.value.filter(w => w.completed).length;
+                return Math.round((done / todayWorkouts.value.length) * 100);
+            });
+
+            // Filter displayed workouts based on selected tab
+            const displayedWorkouts = computed(() => {
+                const list = currentTab.value === 'today' ? todayWorkouts.value : workouts.value;
+                return [...list].sort((a, b) => new Date(a.date) - new Date(b.date));
             });
 
             const toggleComplete = (id) => {
@@ -394,10 +446,11 @@
             };
 
             return {
-                workouts, sortedWorkouts, showAddModal, selectedWorkout, editingWorkout,
-                movingWorkout, movingWorkoutDate, formWorkout, toggleComplete, viewWorkoutDetails,
-                hasStructure, openEditModal, closeFormModal, saveWorkout, deleteWorkout,
-                openMoveModal, saveMovedWorkout, formatDate, getBadgeStyle
+                workouts, currentTab, todayWorkouts, todayProgress, displayedWorkouts,
+                showAddModal, selectedWorkout, editingWorkout, movingWorkout, movingWorkoutDate,
+                formWorkout, toggleComplete, viewWorkoutDetails, hasStructure, openEditModal,
+                closeFormModal, saveWorkout, deleteWorkout, openMoveModal, saveMovedWorkout,
+                formatDate, getBadgeStyle
             };
         }
     }).mount('#app');
