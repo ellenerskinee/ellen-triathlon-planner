@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tri Tracker</title>
+
+    <!-- iOS PWA Capabilities -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Tri Tracker">
+
+    <!-- Tailwind CSS & Vue 3 via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+    <style>
+        /* Mobile-first feel adjustments */
+        body {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans pb-12">
+
+<div id="app" class="max-w-md mx-auto p-4">
+    <!-- Header -->
+    <header class="flex justify-between items-center py-4 border-b border-slate-800 mb-6">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight text-white">Triathlon Log</h1>
+            <p class="text-xs text-slate-400">Weekly Training Plan</p>
+        </div>
+        <button @click="showAddModal = true" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm px-3 py-2 rounded-xl shadow-lg transition">
+            + Workout
+        </button>
+    </header>
+
+    <!-- Workout List -->
+    <main class="space-y-4">
+        <div v-for="workout in sortedWorkouts" :key="workout.id"
+             :class="['p-4 rounded-2xl border transition-all duration-200', 
+                    workout.completed ? 'bg-slate-800/50 border-slate-800 opacity-60' : 'bg-slate-800 border-slate-700 shadow-md']">
+
+            <div class="flex items-start justify-between gap-3">
+                <!-- Checkbox -->
+                <button @click="toggleComplete(workout.id)" class="mt-1 flex-shrink-0">
+                    <div :class="['w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors',
+                          workout.completed ? 'bg-emerald-500 border-emerald-500 text-slate-900' : 'border-slate-500']">
+                        <svg v-if="workout.completed" class="w-4 h-4 stroke-current stroke-[3]" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7"/></svg>
+                    </div>
+                </button>
+
+                <!-- Content -->
+                <div class="flex-grow">
+                    <div class="flex items-center gap-2 mb-1">
+                        <!-- Discipline Badge -->
+                        <span :class="['text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider', getBadgeStyle(workout.type)]">
+                {{ workout.type }}
+              </span>
+                        <span class="text-xs font-medium text-slate-400">{{ formatDate(workout.date) }}</span>
+                    </div>
+
+                    <h3 :class="['font-semibold text-base', workout.completed ? 'line-through text-slate-400' : 'text-slate-100']">
+                        {{ workout.title }}
+                    </h3>
+                    <p v-if="workout.duration" class="text-xs text-slate-400 mt-0.5">{{ workout.duration }} mins</p>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex flex-col gap-2 items-end">
+                    <!-- Move Date Button -->
+                    <button @click="openMoveModal(workout)" class="text-xs text-blue-400 bg-slate-700/50 px-2 py-1 rounded-lg border border-slate-600">
+                        Move
+                    </button>
+                    <button @click="deleteWorkout(workout.id)" class="text-xs text-rose-500/80 hover:text-rose-400">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="workouts.length === 0" class="text-center py-12 text-slate-500 text-sm">
+            No workouts scheduled. Tap <strong>+ Workout</strong> to add one!
+        </div>
+    </main>
+
+    <!-- Modal: Add Workout -->
+    <div v-if="showAddModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-xl">
+            <h2 class="text-lg font-bold text-white">Add New Workout</h2>
+            <div>
+                <label class="text-xs text-slate-400">Discipline</label>
+                <select v-model="newWorkout.type" class="w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-slate-200 focus:outline-none">
+                    <option>Swim</option>
+                    <option>Bike</option>
+                    <option>Run</option>
+                    <option>Strength</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-slate-400">Title / Description</label>
+                <input v-model="newWorkout.title" type="text" placeholder="e.g., 5k Tempo Run" class="w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-slate-200 focus:outline-none">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="text-xs text-slate-400">Date</label>
+                    <input v-model="newWorkout.date" type="date" class="w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl p-2 text-sm text-slate-200 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">Duration (mins)</label>
+                    <input v-model="newWorkout.duration" type="number" placeholder="45" class="w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl p-2 text-sm text-slate-200 focus:outline-none">
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+                <button @click="showAddModal = false" class="px-4 py-2 text-sm text-slate-400">Cancel</button>
+                <button @click="addWorkout" class="px-4 py-2 text-sm bg-blue-600 font-semibold rounded-xl text-white">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Move Workout -->
+    <div v-if="editingWorkout" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-xl">
+            <h2 class="text-lg font-bold text-white">Move Workout</h2>
+            <p class="text-sm text-slate-300">{{ editingWorkout.title }}</p>
+            <div>
+                <label class="text-xs text-slate-400">New Date</label>
+                <input v-model="editingWorkoutDate" type="date" class="w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-slate-200 focus:outline-none">
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+                <button @click="editingWorkout = null" class="px-4 py-2 text-sm text-slate-400">Cancel</button>
+                <button @click="saveMovedWorkout" class="px-4 py-2 text-sm bg-blue-600 font-semibold rounded-xl text-white">Update</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const { createApp, ref, computed, onMounted, watch } = Vue;
+
+    createApp({
+        setup() {
+            const workouts = ref([]);
+            const showAddModal = ref(false);
+            const editingWorkout = ref(null);
+            const editingWorkoutDate = ref('');
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            const newWorkout = ref({ type: 'Run', title: '', date: todayStr, duration: '' });
+
+            // Load workouts from LocalStorage
+            onMounted(() => {
+                const saved = localStorage.getItem('tri_workouts');
+                if (saved) {
+                    workouts.value = JSON.parse(saved);
+                } else {
+                    // Seed initial dummy data if empty
+                    workouts.value = [
+                        { id: '1', type: 'Run', title: '5k Tempo Run', date: todayStr, duration: 30, completed: false },
+                        { id: '2', type: 'Swim', title: '1500m Endurance Swim', date: todayStr, duration: 45, completed: true }
+                    ];
+                }
+            });
+
+            // Auto-save changes to LocalStorage
+            watch(workouts, (newVal) => {
+                localStorage.setItem('tri_workouts', JSON.stringify(newVal));
+            }, { deep: true });
+
+            // Sorting by date (closest first)
+            const sortedWorkouts = computed(() => {
+                return [...workouts.value].sort((a, b) => new Date(a.date) - new Date(b.date));
+            });
+
+            const toggleComplete = (id) => {
+                const w = workouts.value.find(item => item.id === id);
+                if (w) w.completed = !w.completed;
+            };
+
+            const addWorkout = () => {
+                if (!newWorkout.value.title) return;
+                workouts.value.push({
+                    id: Date.now().toString(),
+                    ...newWorkout.value,
+                    completed: false
+                });
+                newWorkout.value = { type: 'Run', title: '', date: todayStr, duration: '' };
+                showAddModal.value = false;
+            };
+
+            const deleteWorkout = (id) => {
+                workouts.value = workouts.value.filter(w => w.id !== id);
+            };
+
+            const openMoveModal = (workout) => {
+                editingWorkout.value = workout;
+                editingWorkoutDate.value = workout.date;
+            };
+
+            const saveMovedWorkout = () => {
+                if (editingWorkout.value && editingWorkoutDate.value) {
+                    editingWorkout.value.date = editingWorkoutDate.value;
+                    editingWorkout.value = null;
+                }
+            };
+
+            const formatDate = (dateStr) => {
+                if (!dateStr) return '';
+                const [y, m, d] = dateStr.split('-');
+                const date = new Date(y, m - 1, d);
+                return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            };
+
+            const getBadgeStyle = (type) => {
+                switch (type) {
+                    case 'Swim': return 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30';
+                    case 'Bike': return 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
+                    case 'Run': return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+                    default: return 'bg-purple-500/20 text-purple-400 border border-purple-500/30';
+                }
+            };
+
+            return {
+                workouts, sortedWorkouts, showAddModal, newWorkout,
+                editingWorkout, editingWorkoutDate, toggleComplete, addWorkout,
+                deleteWorkout, openMoveModal, saveMovedWorkout, formatDate, getBadgeStyle
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
